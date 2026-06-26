@@ -1,0 +1,4 @@
+◇ injected env (6) from .env // tip: ⌘ suppress logs { quiet: true }
+[MONGODB] Connected to "infinity-chat" database.
+[REDIS] Connected to Upstash Redis.
+[SYSTEM] Server listening on http://localhost:3003

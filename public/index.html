@@ -1,0 +1,878 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BiniChat</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="bg-orb orb-1"></div>
+  <div class="bg-orb orb-2"></div>
+
+  <section id="auth-page" class="auth-page">
+    <div class="auth-shell">
+      <div class="auth-hero">
+        <div class="brand">
+          <div class="logo">BC</div>
+          <div>
+            <h1>BiniChat</h1>
+            <p>Robot-powered real-time messaging</p>
+          </div>
+        </div>
+        <p class="hero-copy">Pick a bot, join the lounge, and keep every chat bright, quick, and alive.</p>
+      </div>
+
+      <div class="auth-card">
+        <div class="auth-card-heading">
+          <span>Welcome</span>
+          <h2>Sign in to BiniChat</h2>
+        </div>
+
+        <div class="tabs">
+          <button id="login-tab" class="active" onclick="switchAuth('login')">Login</button>
+          <button id="signup-tab" onclick="switchAuth('signup')">Sign Up</button>
+        </div>
+
+        <form id="auth-form" onsubmit="handleAuth(event)">
+          <input id="username" placeholder="Username" aria-label="Username" autocomplete="username" required />
+          <input id="password" type="password" placeholder="Password" aria-label="Password" autocomplete="current-password" required />
+          <div id="avatar-picker" class="avatar-picker hidden">
+            <p>Choose Your Robot</p>
+            <div id="avatar-options" class="avatar-options"></div>
+          </div>
+          <button type="submit" id="auth-btn">Login</button>
+        </form>
+
+        <p id="auth-error"></p>
+      </div>
+    </div>
+  </section>
+
+  <section id="chat-page" class="chat-page hidden">
+    <aside class="sidebar">
+      <div class="side-brand">
+        <div class="logo mini">BC</div>
+        <div>
+          <strong>BiniChat</strong>
+          <span>Robot chat hub</span>
+        </div>
+      </div>
+
+      <div class="profile-box">
+        <img id="my-avatar" class="avatar-lg" />
+        <div class="profile-info">
+          <h2 id="my-name"></h2>
+          <p id="my-bio"></p>
+          <button onclick="openProfile()">View Profile</button>
+        </div>
+        <button class="logout" onclick="logout()">Logout</button>
+      </div>
+
+      <div class="side-section">
+        <h3>Rooms & Groups</h3>
+        <button id="lounge-room-action" class="room-action active-room" data-room-id="lounge" onclick="openLounge()">Bini Lounge</button>
+        <button class="room-action create-action" onclick="openGroupModal()">Create Group</button>
+        <div id="groups-list" class="group-list"></div>
+      </div>
+
+      <div class="side-section">
+        <h3>Direct Messages</h3>
+        <div id="users-list"></div>
+      </div>
+    </aside>
+
+    <main class="chat-main">
+      <header class="chat-header">
+        <button class="mobile-back" type="button" aria-label="Back to conversations" onclick="showMobileList()">Back</button>
+        <div class="chat-title">
+          <h2 id="room-title">Bini Lounge</h2>
+          <p id="room-subtitle">Real-time robot chat room</p>
+        </div>
+        <div class="header-actions">
+          <button id="room-info-btn" class="icon-btn hidden" type="button" aria-label="Group info" onclick="openGroupInfo()">i</button>
+          <span id="room-status" class="status-dot">Live</span>
+        </div>
+      </header>
+
+      <div id="messages" class="messages"></div>
+
+      <form class="message-form" onsubmit="sendMessage(event)">
+        <input id="message-input" placeholder="Type your message..." aria-label="Message" autocomplete="off" />
+        <button type="submit">Send</button>
+      </form>
+    </main>
+  </section>
+
+  <div id="profile-modal" class="modal hidden">
+    <div class="modal-card">
+      <h2>Edit Profile</h2>
+
+      <img id="preview-avatar" class="avatar-xl" />
+      <div class="profile-avatar-section">
+        <p>Choose Avatar</p>
+        <div id="profile-avatar-options" class="avatar-options"></div>
+      </div>
+      <textarea id="bio-input" placeholder="Write your bio..." aria-label="Bio"></textarea>
+
+      <div class="modal-actions">
+        <button onclick="saveProfile()">Save</button>
+        <button class="cancel" onclick="closeProfile()">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="group-modal" class="modal hidden">
+    <div class="modal-card">
+      <h2>Create Group</h2>
+      <input id="group-name-input" placeholder="Group name" aria-label="Group name" />
+      <div id="group-member-picker" class="member-picker"></div>
+      <p id="group-error" class="modal-error"></p>
+
+      <div class="modal-actions">
+        <button onclick="createGroup()">Create</button>
+        <button class="cancel" onclick="closeGroupModal()">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="group-info-modal" class="modal hidden">
+    <div class="modal-card">
+      <h2 id="group-info-title">Group Info</h2>
+      <div id="group-info-members" class="member-list"></div>
+
+      <div class="modal-actions stack-actions">
+        <button id="delete-group-btn" class="danger hidden" onclick="deleteCurrentGroup()">Delete Group</button>
+        <button class="cancel" onclick="closeGroupInfo()">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let authMode = "login";
+    let token = localStorage.getItem("chat_token");
+    let currentUser = null;
+    let socket = null;
+    let currentRoom = "lounge";
+    let uploadedAvatar = "";
+    let allUsers = [];
+    let groups = [];
+    let onlineUsernames = new Set();
+    let notifications = {};
+    let activeGroup = null;
+    let selectedSignupAvatar = "";
+    let selectedProfileAvatar = "";
+    const signupAvatars = [
+      { name: "Bini Bolt", bg: "#ff3f91", head: "#1d4ed8", face: "#18345d", accent: "#67e8f9", eye: "#d9ff76", mouth: "#ff1744", kind: "classic" },
+      { name: "Bini Bubble", bg: "#b64a2d", head: "#ff4d91", face: "#ffe7f5", accent: "#191c45", eye: "#1f2937", mouth: "#1f2937", kind: "hood" },
+      { name: "Bini Stripe", bg: "#f01414", head: "#e6f7ff", face: "#2563eb", accent: "#0f376f", eye: "#23304a", mouth: "#102a43", kind: "visor-top" },
+      { name: "Bini Wave", bg: "#3b3c6d", head: "#eef2ff", face: "#4f46e5", accent: "#b4a7d6", eye: "#ffffff", mouth: "#111827", kind: "goggles" },
+      { name: "Bini Lens", bg: "#2b7cd3", head: "#f8fafc", face: "#1f2937", accent: "#93c5fd", eye: "#60a5fa", mouth: "#111827", kind: "single" },
+      { name: "Bini Round", bg: "#ffd047", head: "#3b82f6", face: "#f8fafc", accent: "#f97316", eye: "#0f172a", mouth: "#ffffff", kind: "teeth" },
+      { name: "Bini Pulse", bg: "#ff3f91", head: "#f8fafc", face: "#2b2e63", accent: "#7c3aed", eye: "#d9ff76", mouth: "#38bdf8", kind: "screen" },
+      { name: "Bini Shy", bg: "#f59e0b", head: "#f8fafc", face: "#f5d0fe", accent: "#8b5cf6", eye: "#1f2937", mouth: "#5b21b6", kind: "small" },
+      { name: "Bini Matrix", bg: "#34d399", head: "#334155", face: "#f7fee7", accent: "#22c55e", eye: "#d9ff76", mouth: "#111827", kind: "four-eyes" },
+      { name: "Bini Orbit", bg: "#fb7185", head: "#1f2937", face: "#6d28d9", accent: "#a3e635", eye: "#a3e635", mouth: "#a3e635", kind: "orb" },
+      { name: "Bini Spark", bg: "#ff3f91", head: "#0ea5e9", face: "#102a43", accent: "#facc15", eye: "#bfdbfe", mouth: "#e0f2fe", kind: "monster" },
+      { name: "Bini Byte", bg: "#9a3f24", head: "#f8fafc", face: "#475569", accent: "#a3e635", eye: "#e0f2fe", mouth: "#334155", kind: "antenna" },
+      { name: "Bini Buddy", bg: "#ef1717", head: "#a3e635", face: "#f8fafc", accent: "#22c55e", eye: "#1f2937", mouth: "#1f2937", kind: "ears" },
+      { name: "Bini Box", bg: "#3b3c6d", head: "#facc15", face: "#10b981", accent: "#38bdf8", eye: "#ffffff", mouth: "#102a43", kind: "square" },
+      { name: "Bini Note", bg: "#2b7cd3", head: "#f8fafc", face: "#2b2e63", accent: "#a3e635", eye: "#ffffff", mouth: "#a3e635", kind: "tall" },
+      { name: "Bini Blue", bg: "#f5c242", head: "#60a5fa", face: "#2563eb", accent: "#f8fafc", eye: "#ffffff", mouth: "#e0f2fe", kind: "bubble" },
+      { name: "Bini Signal", bg: "#ff3f91", head: "#facc15", face: "#111827", accent: "#a3e635", eye: "#a3e635", mouth: "#a3e635", kind: "screen" },
+      { name: "Bini Zoom", bg: "#f59e0b", head: "#38bdf8", face: "#1d4ed8", accent: "#a78bfa", eye: "#93c5fd", mouth: "#c084fc", kind: "visor" },
+      { name: "Bini Bloom", bg: "#34d399", head: "#ff3f91", face: "#ec4899", accent: "#0f766e", eye: "#1f2937", mouth: "#be185d", kind: "antenna-pair" },
+      { name: "Bini Scope", bg: "#fb8f7e", head: "#f8fafc", face: "#facc15", accent: "#38bdf8", eye: "#38bdf8", mouth: "#0ea5e9", kind: "cyclops" },
+      { name: "Bini Noir", bg: "#ff3f91", head: "#1e3a8a", face: "#f8fafc", accent: "#0f172a", eye: "#111827", mouth: "#a3e635", kind: "tall" },
+      { name: "Bini Chrome", bg: "#9a3f24", head: "#cbd5e1", face: "#475569", accent: "#a78bfa", eye: "#111827", mouth: "#e0e7ff", kind: "bolts" },
+      { name: "Bini Green", bg: "#ef1717", head: "#84cc16", face: "#365314", accent: "#9ca3af", eye: "#22c55e", mouth: "#111827", kind: "square" },
+      { name: "Bini Mini", bg: "#3b3c6d", head: "#facc15", face: "#fef3c7", accent: "#ef4444", eye: "#1f2937", mouth: "#ef4444", kind: "tiny" },
+      { name: "Bini Nova", bg: "#2b7cd3", head: "#ff3f91", face: "#0f172a", accent: "#38bdf8", eye: "#f8fafc", mouth: "#f8fafc", kind: "camera" }
+    ];
+
+    function robotFace(avatar) {
+      const eyePair = `<circle cx="49" cy="54" r="5" fill="${avatar.eye}"/><circle cx="71" cy="54" r="5" fill="${avatar.eye}"/>`;
+      const smile = `<path d="M50 70c7 7 13 7 20 0" fill="none" stroke="${avatar.mouth}" stroke-width="4" stroke-linecap="round"/>`;
+      const pulse = `<path d="M39 59h8l4-8 7 17 6-13h17" fill="none" stroke="${avatar.mouth}" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>`;
+
+      if (avatar.kind === "single") return `<rect x="41" y="25" width="38" height="60" rx="16" fill="${avatar.face}"/><circle cx="60" cy="54" r="11" fill="${avatar.eye}"/><circle cx="63" cy="50" r="3" fill="#e0f2fe"/>`;
+      if (avatar.kind === "screen") return `<rect x="30" y="39" width="60" height="33" rx="6" fill="${avatar.face}"/>${pulse}<circle cx="60" cy="29" r="7" fill="${avatar.accent}"/><path d="M60 36v-9" stroke="${avatar.face}" stroke-width="5"/>`;
+      if (avatar.kind === "goggles") return `<path d="M39 24l11-13 10 17 11-17 10 13v16H39z" fill="${avatar.accent}" opacity=".65"/><rect x="31" y="45" width="58" height="24" rx="10" fill="${avatar.accent}"/>${pulse}<path d="M48 76c8 7 17 7 25 0" stroke="${avatar.mouth}" stroke-width="5" fill="none" stroke-linecap="round"/>`;
+      if (avatar.kind === "hood") return `<path d="M28 48c5-23 59-23 64 0v33H28z" fill="${avatar.head}"/><rect x="35" y="43" width="50" height="31" rx="16" fill="${avatar.face}"/>${eyePair}${smile}`;
+      if (avatar.kind === "visor-top") return `<rect x="41" y="22" width="38" height="22" rx="8" fill="${avatar.face}"/><rect x="32" y="45" width="56" height="36" rx="16" fill="${avatar.head}"/>${eyePair}<rect x="50" y="68" width="20" height="8" rx="3" fill="${avatar.mouth}"/>`;
+      if (avatar.kind === "teeth") return `<rect x="31" y="37" width="58" height="43" rx="14" fill="${avatar.head}"/><rect x="39" y="45" width="42" height="16" rx="8" fill="${avatar.face}"/><circle cx="50" cy="53" r="4" fill="${avatar.eye}"/><circle cx="70" cy="53" r="4" fill="${avatar.eye}"/><rect x="43" y="67" width="34" height="13" rx="3" fill="${avatar.mouth}"/><path d="M51 67v13M60 67v13M69 67v13" stroke="${avatar.head}" stroke-width="3"/>`;
+      if (avatar.kind === "small") return `<ellipse cx="60" cy="62" rx="31" ry="24" fill="${avatar.head}"/><circle cx="49" cy="56" r="5" fill="${avatar.eye}"/><circle cx="71" cy="56" r="5" fill="${avatar.eye}"/><path d="M47 40l9-6M73 40l-9-6" stroke="${avatar.accent}" stroke-width="5" stroke-linecap="round"/>${smile}`;
+      if (avatar.kind === "four-eyes") return `<path d="M31 37c9-17 49-17 58 0v45H31z" fill="${avatar.face}"/><circle cx="43" cy="53" r="5" fill="${avatar.eye}"/><circle cx="55" cy="53" r="5" fill="${avatar.eye}"/><circle cx="67" cy="53" r="5" fill="${avatar.eye}"/><circle cx="79" cy="53" r="5" fill="${avatar.eye}"/><rect x="43" y="70" width="34" height="8" rx="4" fill="${avatar.mouth}"/>`;
+      if (avatar.kind === "orb") return `<circle cx="60" cy="56" r="32" fill="${avatar.face}"/><rect x="39" y="50" width="42" height="11" rx="6" fill="${avatar.eye}"/><path d="M42 37c11-13 25-13 36 0" stroke="${avatar.accent}" stroke-width="6" fill="none" stroke-linecap="round"/>`;
+      if (avatar.kind === "monster") return `<path d="M33 82V48l8-19 8 16 11-20 11 20 8-16 8 19v34z" fill="${avatar.head}"/><circle cx="48" cy="55" r="7" fill="${avatar.eye}"/><circle cx="72" cy="55" r="7" fill="${avatar.eye}"/><path d="M43 70h34l-5 10H48z" fill="${avatar.mouth}"/><path d="M50 70l4 7 4-7 4 7 4-7" stroke="${avatar.face}" stroke-width="3"/>`;
+      if (avatar.kind === "antenna") return `<rect x="34" y="38" width="52" height="40" rx="8" fill="${avatar.head}"/><path d="M60 37V22" stroke="${avatar.accent}" stroke-width="5"/><circle cx="60" cy="20" r="5" fill="${avatar.accent}"/><circle cx="49" cy="55" r="8" fill="${avatar.face}"/><circle cx="71" cy="55" r="8" fill="${avatar.face}"/><circle cx="49" cy="55" r="4" fill="${avatar.eye}"/><circle cx="71" cy="55" r="4" fill="${avatar.eye}"/><path d="M42 71h36" stroke="${avatar.mouth}" stroke-width="6" stroke-dasharray="5 5"/>`;
+      if (avatar.kind === "ears") return `<rect x="22" y="47" width="14" height="22" rx="6" fill="${avatar.accent}"/><rect x="84" y="47" width="14" height="22" rx="6" fill="${avatar.accent}"/><rect x="35" y="36" width="50" height="42" rx="11" fill="${avatar.face}"/>${eyePair}${smile}`;
+      if (avatar.kind === "square") return `<rect x="34" y="33" width="52" height="46" rx="8" fill="${avatar.face}"/><rect x="26" y="43" width="10" height="24" rx="4" fill="${avatar.accent}"/><rect x="84" y="43" width="10" height="24" rx="4" fill="${avatar.accent}"/>${eyePair}${smile}<circle cx="60" cy="25" r="6" fill="${avatar.accent}"/>`;
+      if (avatar.kind === "tall") return `<rect x="36" y="24" width="48" height="67" rx="15" fill="${avatar.face}"/><rect x="45" y="48" width="30" height="5" rx="3" fill="${avatar.eye}"/><rect x="45" y="61" width="27" height="5" rx="3" fill="${avatar.eye}"/>${pulse}`;
+      if (avatar.kind === "bubble") return `<rect x="28" y="36" width="64" height="43" rx="20" fill="${avatar.head}"/><rect x="40" y="46" width="40" height="21" rx="10" fill="${avatar.face}"/>${eyePair}<rect x="50" y="74" width="20" height="5" rx="3" fill="${avatar.mouth}"/>`;
+      if (avatar.kind === "visor") return `<ellipse cx="60" cy="58" rx="31" ry="30" fill="${avatar.head}"/><rect x="34" y="45" width="52" height="15" rx="7" fill="${avatar.face}"/><circle cx="60" cy="72" r="10" fill="${avatar.mouth}"/><path d="M83 36l8-13" stroke="#e0f2fe" stroke-width="5" stroke-linecap="round"/>`;
+      if (avatar.kind === "antenna-pair") return `<path d="M46 34V17M74 34V17" stroke="${avatar.accent}" stroke-width="6" stroke-linecap="round"/><rect x="33" y="34" width="54" height="47" rx="20" fill="${avatar.head}"/><circle cx="50" cy="55" r="6" fill="${avatar.eye}"/><circle cx="70" cy="55" r="6" fill="${avatar.eye}"/>${smile}`;
+      if (avatar.kind === "cyclops") return `<rect x="35" y="35" width="50" height="45" rx="11" fill="${avatar.head}"/><circle cx="60" cy="52" r="15" fill="${avatar.eye}"/><circle cx="64" cy="47" r="5" fill="#e0f2fe"/><rect x="34" y="76" width="52" height="8" rx="4" fill="${avatar.mouth}"/>`;
+      if (avatar.kind === "bolts") return `<rect x="28" y="46" width="10" height="16" rx="5" fill="#f8fafc"/><rect x="82" y="46" width="10" height="16" rx="5" fill="#f8fafc"/><path d="M36 35c6-19 42-19 48 0v42H36z" fill="${avatar.head}"/><path d="M42 35h36" stroke="#e5e7eb" stroke-width="7" stroke-dasharray="4 5"/>${eyePair}<rect x="50" y="67" width="20" height="8" rx="3" fill="${avatar.mouth}"/>`;
+      if (avatar.kind === "tiny") return `<rect x="38" y="33" width="44" height="45" rx="14" fill="${avatar.head}"/><circle cx="48" cy="53" r="6" fill="${avatar.eye}"/><circle cx="72" cy="53" r="6" fill="${avatar.eye}"/><path d="M50 66h20" stroke="${avatar.mouth}" stroke-width="5" stroke-linecap="round"/><circle cx="34" cy="31" r="5" fill="${avatar.accent}"/><circle cx="86" cy="31" r="5" fill="${avatar.accent}"/>`;
+      if (avatar.kind === "camera") return `<ellipse cx="60" cy="56" rx="33" ry="28" fill="${avatar.head}"/><circle cx="67" cy="43" r="15" fill="${avatar.face}"/><circle cx="67" cy="43" r="8" fill="${avatar.eye}"/><rect x="48" y="66" width="28" height="8" rx="4" fill="${avatar.mouth}"/><circle cx="80" cy="33" r="4" fill="#e0f2fe"/>`;
+
+      return `<rect x="31" y="31" width="58" height="50" rx="16" fill="${avatar.head}"/><rect x="26" y="49" width="10" height="18" rx="5" fill="${avatar.accent}"/><rect x="84" y="49" width="10" height="18" rx="5" fill="${avatar.accent}"/>${eyePair}<circle cx="60" cy="68" r="7" fill="${avatar.mouth}"/>`;
+    }
+
+    function makeAvatarDataUrl(avatar) {
+      const svg = `
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120">
+          <defs>
+            <filter id="shadow" x="-25%" y="-20%" width="150%" height="150%">
+              <feDropShadow dx="0" dy="8" stdDeviation="7" flood-color="#0f172a" flood-opacity=".28"/>
+            </filter>
+          </defs>
+          <circle cx="60" cy="60" r="55" fill="${avatar.bg}" filter="url(#shadow)"/>
+          <path d="M25 113c5-26 65-26 70 0z" fill="${avatar.accent}" opacity=".95"/>
+          ${robotFace(avatar)}
+          <circle cx="60" cy="60" r="52" fill="none" stroke="#ffffff" stroke-width="5" opacity=".9"/>
+        </svg>
+      `;
+
+      return "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(svg.trim());
+    }
+
+    signupAvatars.forEach(avatar => {
+      avatar.src = makeAvatarDataUrl(avatar);
+    });
+    selectedSignupAvatar = signupAvatars[0].src;
+
+    function getRobotAvatarForName(username) {
+      const seed = String(username || "bini").split("").reduce((sum, char) => sum + char.charCodeAt(0), 0);
+      return signupAvatars[seed % signupAvatars.length].src;
+    }
+
+    function getDisplayAvatar(entity) {
+      const avatar = entity?.avatar || "";
+      if (signupAvatars.some(option => option.src === avatar)) return avatar;
+      return getRobotAvatarForName(entity?.username || entity?.name || entity?.roomTitle);
+    }
+
+    function switchAuth(mode) {
+      authMode = mode;
+      document.getElementById("login-tab").classList.toggle("active", mode === "login");
+      document.getElementById("signup-tab").classList.toggle("active", mode === "signup");
+      document.getElementById("auth-btn").textContent = mode === "login" ? "Login" : "Create Account";
+      document.getElementById("avatar-picker").classList.toggle("hidden", mode !== "signup");
+      document.getElementById("auth-error").textContent = "";
+    }
+
+    function renderSignupAvatars() {
+      const box = document.getElementById("avatar-options");
+      box.innerHTML = "";
+
+      signupAvatars.forEach(avatar => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "avatar-option";
+        button.title = avatar.name;
+        button.setAttribute("aria-label", avatar.name);
+        button.classList.toggle("selected", avatar.src === selectedSignupAvatar);
+        button.innerHTML = `<img src="${avatar.src}" alt="${avatar.name}" />`;
+
+        button.addEventListener("click", () => {
+          selectedSignupAvatar = avatar.src;
+          renderSignupAvatars();
+        });
+
+        box.appendChild(button);
+      });
+    }
+
+    function renderProfileAvatars() {
+      const box = document.getElementById("profile-avatar-options");
+      box.innerHTML = "";
+
+      signupAvatars.forEach(avatar => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "avatar-option";
+        button.title = avatar.name;
+        button.setAttribute("aria-label", avatar.name);
+        button.classList.toggle("selected", avatar.src === selectedProfileAvatar);
+        button.innerHTML = `<img src="${avatar.src}" alt="${avatar.name}" />`;
+
+        button.addEventListener("click", () => {
+          selectedProfileAvatar = avatar.src;
+          uploadedAvatar = avatar.src;
+          document.getElementById("preview-avatar").src = avatar.src;
+          renderProfileAvatars();
+        });
+
+        box.appendChild(button);
+      });
+    }
+
+    async function handleAuth(e) {
+      e.preventDefault();
+
+      const username = document.getElementById("username").value;
+      const password = document.getElementById("password").value;
+
+      const url = authMode === "login" ? "/api/auth/login" : "/api/auth/signup";
+
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          username,
+          password,
+          avatar: authMode === "signup" ? selectedSignupAvatar : undefined
+        })
+      });
+
+      const data = await res.json();
+
+      if (!data.success) {
+        document.getElementById("auth-error").textContent = data.error || "Failed.";
+        return;
+      }
+
+      token = data.token;
+      currentUser = data.user;
+      localStorage.setItem("chat_token", token);
+
+      showChat();
+    }
+
+    function escapeHtml(value) {
+      return String(value || "").replace(/[&<>"']/g, char => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;"
+      }[char]));
+    }
+
+    function getPrivateRoomId(username) {
+      return ["dm", ...[currentUser.username, username].sort()].join(":");
+    }
+
+    function getUser(username) {
+      return allUsers.find(user => user.username === username);
+    }
+
+    function getGroup(roomId) {
+      return groups.find(group => group._id === roomId);
+    }
+
+    function setHeader(title, subtitle, status, isGroup) {
+      document.getElementById("room-title").textContent = title;
+      document.getElementById("room-subtitle").textContent = subtitle;
+      document.getElementById("room-status").textContent = status;
+      document.getElementById("room-info-btn").classList.toggle("hidden", !isGroup);
+    }
+
+    function showAuthPage() {
+      currentUser = null;
+      token = null;
+      localStorage.removeItem("chat_token");
+      document.getElementById("chat-page").classList.add("hidden");
+      document.getElementById("chat-page").classList.remove("mobile-chat-open");
+      document.getElementById("auth-page").classList.remove("hidden");
+    }
+
+    async function showChat() {
+      document.getElementById("auth-page").classList.add("hidden");
+      const chatPage = document.getElementById("chat-page");
+      chatPage.classList.remove("hidden");
+      chatPage.classList.remove("mobile-chat-open");
+
+      if (!currentUser) {
+        const res = await fetch("/api/auth/me", {
+          headers: { Authorization: "Bearer " + token }
+        });
+        const data = await res.json();
+        currentUser = data.user;
+      }
+
+      if (!currentUser) {
+        throw new Error("Missing user session");
+      }
+
+      document.getElementById("my-name").textContent = currentUser.username;
+      document.getElementById("my-avatar").src = getDisplayAvatar(currentUser);
+      document.getElementById("my-bio").textContent = currentUser.bio || "BiniChat user";
+
+      await loadUsers();
+      await loadGroups();
+      connectSocket();
+      openLounge(false);
+    }
+
+    async function loadUsers() {
+      const res = await fetch("/api/users", {
+        headers: { Authorization: "Bearer " + token }
+      });
+
+      const data = await res.json();
+      allUsers = data.users || [];
+      onlineUsernames = new Set(allUsers.filter(user => user.online).map(user => user.username));
+      renderUsers();
+      renderMemberPicker();
+    }
+
+    async function loadGroups() {
+      const res = await fetch("/api/groups", {
+        headers: { Authorization: "Bearer " + token }
+      });
+
+      const data = await res.json();
+      groups = data.groups || [];
+      renderGroups();
+
+      if (currentRoom.startsWith("g_") && !groups.some(group => group._id === currentRoom)) {
+        openLounge();
+      }
+    }
+
+    async function loadRoomHistory(roomId) {
+      const res = await fetch(`/api/messages/${encodeURIComponent(roomId)}`, {
+        headers: { Authorization: "Bearer " + token }
+      });
+
+      if (!res.ok) return;
+
+      const data = await res.json();
+      const box = document.getElementById("messages");
+      box.innerHTML = "";
+      (data.messages || []).forEach(renderMessage);
+    }
+
+    function showMobileChat() {
+      document.getElementById("chat-page").classList.add("mobile-chat-open");
+    }
+
+    function showMobileList() {
+      document.getElementById("chat-page").classList.remove("mobile-chat-open");
+    }
+
+    function openLounge(showChatPanel = true) {
+      currentRoom = "lounge";
+      activeGroup = null;
+      clearNotifications("lounge");
+      setHeader("Bini Lounge", "Real-time robot chat room", "Live", false);
+      markActiveItems();
+      if (showChatPanel) showMobileChat();
+      loadRoomHistory(currentRoom);
+    }
+
+    function openDirectChat(username) {
+      const user = getUser(username);
+      currentRoom = getPrivateRoomId(username);
+      activeGroup = null;
+      clearNotifications(currentRoom);
+      setHeader(
+        username,
+        user?.bio || "Direct message",
+        onlineUsernames.has(username) ? "Online" : "Offline",
+        false
+      );
+      markActiveItems();
+      showMobileChat();
+      loadRoomHistory(currentRoom);
+    }
+
+    function openGroupChat(groupId) {
+      activeGroup = getGroup(groupId);
+      if (!activeGroup) return;
+
+      currentRoom = groupId;
+      clearNotifications(currentRoom);
+      setHeader(
+        activeGroup.name,
+        `${activeGroup.members.length} member${activeGroup.members.length === 1 ? "" : "s"}`,
+        activeGroup.admin === currentUser.username || activeGroup.creator === currentUser.username ? "Admin" : "Member",
+        true
+      );
+      markActiveItems();
+      showMobileChat();
+      loadRoomHistory(currentRoom);
+    }
+
+    function renderUsers() {
+      const box = document.getElementById("users-list");
+      box.innerHTML = "";
+
+      allUsers
+        .filter(user => user.username !== currentUser.username)
+        .forEach(user => {
+          const isOnline = onlineUsernames.has(user.username);
+          const roomId = getPrivateRoomId(user.username);
+          const unreadCount = notifications[roomId]?.count || 0;
+          const div = document.createElement("button");
+          div.type = "button";
+          div.className = `user-item user-button ${isOnline ? "online" : "offline"}`;
+          div.dataset.roomId = roomId;
+          div.onclick = () => openDirectChat(user.username);
+          div.innerHTML = `
+            <img src="${getDisplayAvatar(user)}" alt="${escapeHtml(user.username)}" />
+            <div>
+              <strong>${escapeHtml(user.username)}</strong>
+              <small>${isOnline ? "Online" : "Offline"}</small>
+            </div>
+            <span class="presence-dot ${isOnline ? "is-online" : "is-offline"}" aria-label="${isOnline ? "Online" : "Offline"}"></span>
+            ${unreadCount ? `<span class="unread-badge">${unreadCount}</span>` : ""}
+          `;
+          box.appendChild(div);
+        });
+    }
+
+    function renderGroups() {
+      const box = document.getElementById("groups-list");
+      box.innerHTML = "";
+
+      if (!groups.length) {
+        box.innerHTML = '<div class="empty-state">No groups yet</div>';
+        return;
+      }
+
+      groups.forEach(group => {
+        const unreadCount = notifications[group._id]?.count || 0;
+        const div = document.createElement("button");
+        div.type = "button";
+        div.className = "user-item user-button group-item";
+        div.dataset.roomId = group._id;
+        div.onclick = () => openGroupChat(group._id);
+        div.innerHTML = `
+          <img src="${getDisplayAvatar({ ...group, username: group.name })}" alt="${escapeHtml(group.name)}" />
+          <div>
+            <strong>${escapeHtml(group.name)}</strong>
+            <small>${group.members.length} members</small>
+          </div>
+          ${unreadCount ? `<span class="unread-badge">${unreadCount}</span>` : ""}
+        `;
+        box.appendChild(div);
+      });
+
+      if (activeGroup) {
+        activeGroup = getGroup(activeGroup._id);
+      }
+      markActiveItems();
+    }
+
+    function renderLoungeNotification() {
+      const button = document.getElementById("lounge-room-action");
+      const unreadCount = notifications.lounge?.count || 0;
+      button.classList.toggle("has-unread", unreadCount > 0);
+      button.innerHTML = `
+        <span>Bini Lounge</span>
+        ${unreadCount ? `<span class="unread-badge">${unreadCount}</span>` : ""}
+      `;
+    }
+
+    function markActiveItems() {
+      document.querySelectorAll("[data-room-id]").forEach(item => {
+        item.classList.toggle("active-room", item.dataset.roomId === currentRoom);
+      });
+    }
+
+    function connectSocket() {
+      if (socket) socket.close();
+      socket = new WebSocket(`ws://${location.host}?token=${token}`);
+
+      socket.onmessage = e => {
+        const data = JSON.parse(e.data);
+
+        if (data.type === "online_list") {
+          onlineUsernames = new Set((data.users || []).map(user => user.username));
+          allUsers = allUsers.map(user => ({ ...user, online: onlineUsernames.has(user.username) }));
+          renderUsers();
+          updateCurrentStatus();
+        }
+
+        if (data.type === "history" && data.roomId === currentRoom) {
+          document.getElementById("messages").innerHTML = "";
+          data.messages.forEach(renderMessage);
+        }
+
+        if (data.type === "groups_updated") {
+          loadGroups();
+        }
+
+        if (data.type === "group_deleted") {
+          loadGroups();
+          if (currentRoom === data.roomId) {
+            openLounge();
+          }
+        }
+
+        if (data.type === "chat") {
+          if (data.roomId === currentRoom) {
+            renderMessage(data);
+          } else if (data.username !== currentUser.username) {
+            addNotification(data);
+          }
+        }
+      };
+    }
+
+    function updateCurrentStatus() {
+      if (!currentRoom.startsWith("dm:")) return;
+      const username = currentRoom.split(":").find(name => name !== "dm" && name !== currentUser.username);
+      document.getElementById("room-status").textContent = onlineUsernames.has(username) ? "Online" : "Offline";
+    }
+
+    function getNotificationTitle(msg) {
+      if (msg.roomId.startsWith("dm:")) return msg.username;
+      const group = getGroup(msg.roomId);
+      return group?.name || msg.roomTitle || "Group message";
+    }
+
+    function addNotification(msg) {
+      if (!notifications[msg.roomId]) {
+        notifications[msg.roomId] = {
+          title: getNotificationTitle(msg),
+          count: 0,
+          messages: []
+        };
+      }
+
+      notifications[msg.roomId].count += 1;
+      notifications[msg.roomId].messages.unshift(msg);
+      notifications[msg.roomId].messages = notifications[msg.roomId].messages.slice(0, 3);
+      renderNotifications();
+    }
+
+    function clearNotifications(roomId) {
+      delete notifications[roomId];
+      renderNotifications();
+    }
+
+    function renderNotifications() {
+      renderLoungeNotification();
+      renderUsers();
+      renderGroups();
+    }
+
+    function renderMessage(msg) {
+      const box = document.getElementById("messages");
+      const div = document.createElement("div");
+
+      const mine = msg.username === currentUser.username;
+      div.className = mine ? "message mine" : "message";
+
+      const time = new Date(msg.timestamp).toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit"
+      });
+
+      div.innerHTML = `
+        <img src="${getDisplayAvatar(msg)}" alt="${escapeHtml(msg.username)}" />
+        <div class="bubble">
+          <div class="msg-top">
+            <strong>${escapeHtml(msg.username)}</strong>
+            <span>${time}</span>
+          </div>
+          <p>${escapeHtml(msg.message)}</p>
+        </div>
+      `;
+
+      box.appendChild(div);
+      box.scrollTop = box.scrollHeight;
+    }
+
+    function sendMessage(e) {
+      e.preventDefault();
+
+      const input = document.getElementById("message-input");
+      const message = input.value.trim();
+
+      if (!message || !socket || socket.readyState !== WebSocket.OPEN) return;
+
+      socket.send(JSON.stringify({
+        type: "chat",
+        roomId: currentRoom,
+        message
+      }));
+
+      input.value = "";
+    }
+
+    function openProfile() {
+      uploadedAvatar = getDisplayAvatar(currentUser);
+      selectedProfileAvatar = getDisplayAvatar(currentUser);
+      document.getElementById("preview-avatar").src = getDisplayAvatar(currentUser);
+      document.getElementById("bio-input").value = currentUser.bio || "";
+      renderProfileAvatars();
+      document.getElementById("profile-modal").classList.remove("hidden");
+    }
+
+    function closeProfile() {
+      document.getElementById("profile-modal").classList.add("hidden");
+    }
+
+    async function saveProfile() {
+      const bio = document.getElementById("bio-input").value;
+
+      const res = await fetch("/api/profile", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer " + token
+        },
+        body: JSON.stringify({
+          avatar: uploadedAvatar,
+          bio
+        })
+      });
+
+      const data = await res.json();
+
+      if (data.success) {
+        currentUser = data.user;
+        document.getElementById("my-avatar").src = getDisplayAvatar(currentUser);
+        document.getElementById("my-name").textContent = currentUser.username;
+        document.getElementById("my-bio").textContent = currentUser.bio;
+        closeProfile();
+        loadUsers();
+      }
+    }
+
+    function openGroupModal() {
+      document.getElementById("group-name-input").value = "";
+      document.getElementById("group-error").textContent = "";
+      renderMemberPicker();
+      document.getElementById("group-modal").classList.remove("hidden");
+    }
+
+    function closeGroupModal() {
+      document.getElementById("group-modal").classList.add("hidden");
+    }
+
+    function renderMemberPicker() {
+      const box = document.getElementById("group-member-picker");
+      if (!box || !currentUser) return;
+
+      const users = allUsers.filter(user => user.username !== currentUser.username);
+      if (!users.length) {
+        box.innerHTML = '<div class="empty-state">No other users yet</div>';
+        return;
+      }
+
+      box.innerHTML = users.map(user => `
+        <label class="member-option">
+          <input type="checkbox" value="${escapeHtml(user.username)}" />
+          <img src="${getDisplayAvatar(user)}" alt="${escapeHtml(user.username)}" />
+          <span>${escapeHtml(user.username)}</span>
+          <small>${onlineUsernames.has(user.username) ? "Online" : "Offline"}</small>
+        </label>
+      `).join("");
+    }
+
+    async function createGroup() {
+      const name = document.getElementById("group-name-input").value.trim();
+      const members = Array.from(document.querySelectorAll("#group-member-picker input:checked"))
+        .map(input => input.value);
+
+      if (!name) {
+        document.getElementById("group-error").textContent = "Group name is required.";
+        return;
+      }
+
+      const res = await fetch("/api/groups", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer " + token
+        },
+        body: JSON.stringify({ name, members })
+      });
+
+      const data = await res.json();
+      if (!data.success) {
+        document.getElementById("group-error").textContent = data.error || "Could not create group.";
+        return;
+      }
+
+      closeGroupModal();
+      await loadGroups();
+      openGroupChat(data.group._id);
+    }
+
+    function openGroupInfo() {
+      activeGroup = getGroup(currentRoom);
+      if (!activeGroup) return;
+
+      const isAdmin = (activeGroup.admin || activeGroup.creator) === currentUser.username;
+      document.getElementById("group-info-title").textContent = activeGroup.name;
+      document.getElementById("delete-group-btn").classList.toggle("hidden", !isAdmin);
+
+      const box = document.getElementById("group-info-members");
+      box.innerHTML = activeGroup.members.map(username => {
+        const user = getUser(username) || { username, avatar: activeGroup.avatar };
+        const isOwner = username === (activeGroup.admin || activeGroup.creator);
+        const canRemove = isAdmin && username !== currentUser.username;
+
+        return `
+          <div class="member-row">
+            <img src="${getDisplayAvatar(user)}" alt="${escapeHtml(username)}" />
+            <div>
+              <strong>${escapeHtml(username)}</strong>
+              <small>${isOwner ? "Admin" : onlineUsernames.has(username) ? "Online" : "Offline"}</small>
+            </div>
+            ${canRemove ? `<button class="small-btn danger" onclick="removeGroupMember('${escapeHtml(username)}')">Remove</button>` : ""}
+          </div>
+        `;
+      }).join("");
+
+      document.getElementById("group-info-modal").classList.remove("hidden");
+    }
+
+    function closeGroupInfo() {
+      document.getElementById("group-info-modal").classList.add("hidden");
+    }
+
+    async function removeGroupMember(username) {
+      if (!activeGroup) return;
+
+      const res = await fetch(`/api/groups/${encodeURIComponent(activeGroup._id)}/members/${encodeURIComponent(username)}`, {
+        method: "DELETE",
+        headers: { Authorization: "Bearer " + token }
+      });
+
+      if (res.ok) {
+        await loadGroups();
+        activeGroup = getGroup(activeGroup._id);
+        if (activeGroup) openGroupInfo();
+      }
+    }
+
+    async function deleteCurrentGroup() {
+      if (!activeGroup || !confirm(`Delete ${activeGroup.name}?`)) return;
+
+      const res = await fetch(`/api/groups/${encodeURIComponent(activeGroup._id)}`, {
+        method: "DELETE",
+        headers: { Authorization: "Bearer " + token }
+      });
+
+      if (res.ok) {
+        closeGroupInfo();
+        await loadGroups();
+        openLounge();
+      }
+    }
+
+    async function logout() {
+      await fetch("/api/auth/logout", { method: "POST" });
+      localStorage.removeItem("chat_token");
+      location.reload();
+    }
+
+    if (token) {
+      showChat().catch(() => {
+        showAuthPage();
+      });
+    }
+
+    renderSignupAvatars();
+  </script>
+</body>
+</html>
