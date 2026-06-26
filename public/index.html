@@ -576,7 +576,8 @@
 
     function connectSocket() {
       if (socket) socket.close();
-      socket = new WebSocket(`ws://${location.host}?token=${token}`);
+      const socketProtocol = location.protocol === "https:" ? "wss" : "ws";
+      socket = new WebSocket(`${socketProtocol}://${location.host}?token=${encodeURIComponent(token)}`);
 
       socket.onmessage = e => {
         const data = JSON.parse(e.data);
@@ -612,6 +613,30 @@
           }
         }
       };
+    }
+
+    function sendChatPayload(payload, onSent) {
+      if (!socket || socket.readyState === WebSocket.CLOSED || socket.readyState === WebSocket.CLOSING) {
+        connectSocket();
+      }
+
+      if (!socket) return false;
+
+      const sendNow = () => {
+        if (socket.readyState !== WebSocket.OPEN) return false;
+        socket.send(JSON.stringify(payload));
+        if (onSent) onSent();
+        return true;
+      };
+
+      if (sendNow()) return true;
+
+      if (socket.readyState === WebSocket.CONNECTING) {
+        socket.addEventListener("open", sendNow, { once: true });
+        return true;
+      }
+
+      return false;
     }
 
     function updateCurrentStatus() {
@@ -685,15 +710,15 @@
       const input = document.getElementById("message-input");
       const message = input.value.trim();
 
-      if (!message || !socket || socket.readyState !== WebSocket.OPEN) return;
+      if (!message) return;
 
-      socket.send(JSON.stringify({
+      sendChatPayload({
         type: "chat",
         roomId: currentRoom,
         message
-      }));
-
-      input.value = "";
+      }, () => {
+        input.value = "";
+      });
     }
 
     function openProfile() {
